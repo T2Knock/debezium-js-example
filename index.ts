@@ -1,50 +1,42 @@
-import {
-  KafkaConsumer,
-  type ConsumerGlobalConfig,
-  type ConsumerTopicConfig,
-  type Message,
-} from "node-rdkafka";
+import { Kafka, type Consumer, type EachMessagePayload } from "kafkajs";
 
-const consumerConfig: ConsumerGlobalConfig = {
-  "group.id": "demo-group",
-  "metadata.broker.list": "localhost:9092", // Update with your Kafka broker's address
-};
+const kafka = new Kafka({
+  clientId: "debezium-demo-client",
+  brokers: ["localhost:9092"], // Replace with your Kafka broker addresses
+});
 
-const topicConfig: ConsumerTopicConfig = {
-  "auto.offset.reset": "earliest",
-};
+const topic = "dbserver1.inventory.customers"; // Debezium topic (adjust as needed)
 
-// Function to handle messages from Kafka
-function startDebeziumConsumer() {
-  const consumer = new KafkaConsumer(consumerConfig, topicConfig);
+async function startDebeziumConsumer() {
+  const consumer: Consumer = kafka.consumer({
+    groupId: "debezium-demo-group",
+  });
 
-  // Set up event handlers
-  consumer
-    .on("ready", () => {
-      console.log("Consumer is ready and listening for messages...");
-      consumer.subscribe(["dbserver1.inventory.customers"]); // Replace with your Debezium topic(s)
-      consumer.consume(); // Start consuming messages
-    })
-    .on("data", (data: Message) => {
-      const key = data.key ? data.key.toString() : null;
-      const value = data.value ? JSON.parse(data.value.toString()) : null;
+  await consumer.connect();
+  console.log("Kafka Consumer connected");
 
-      console.log("Received Debezium event:");
-      console.log("Key:", key);
-      console.log("Value:", value);
+  await consumer.subscribe({ topic });
+  console.log(`Subscribed to topic ${topic}`);
 
-      // Here, you can process the change event data as needed
-      if (value && value.payload) {
-        console.log("Operation:", value.payload.op); // e.g., "c" for create, "u" for update, "d" for delete
-        console.log("Data:", value.payload.after || value.payload.before);
+  await consumer.run({
+    eachMessage: async ({ topic, partition, message }: EachMessagePayload) => {
+      const key = message.key?.toString();
+      const value = message.value?.toString();
+
+      if (value) {
+        const parsedValue = JSON.parse(value);
+        console.log("Received Debezium event:", { key, value: parsedValue });
+
+        // Access Debezium payload for CDC details
+        const { payload } = parsedValue;
+        if (payload) {
+          console.log("Operation:", payload.op); // e.g., "c" for create, "u" for update, "d" for delete
+          console.log("Data After:", payload.after); // Data after operation
+          console.log("Data Before:", payload.before); // Data before operation (for delete)
+        }
       }
-    })
-    .on("event.error", (err) => {
-      console.error("Error from consumer:", err);
-    });
-
-  consumer.connect();
+    },
+  });
 }
 
-// Start the consumer
-startDebeziumConsumer();
+startDebeziumConsumer().catch(console.error);
