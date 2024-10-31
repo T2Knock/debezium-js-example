@@ -5,7 +5,7 @@ const kafka = new Kafka({
   brokers: ["localhost:9092"], // Replace with your Kafka broker addresses
 });
 
-const topic = "dbserver1.inventory.customers"; // Debezium topic (adjust as needed)
+const topic = new RegExp("dbserver1.inventory.*"); // Debezium topic (adjust as needed)
 
 async function startDebeziumConsumer() {
   const consumer: Consumer = kafka.consumer({
